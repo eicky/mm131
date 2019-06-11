@@ -19,7 +19,7 @@ def creat_soup(url):
     :param url:一个页面的链接
     '''
     # 获取网页，得到一个response对象
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
     # 指定自定义编码，让文本按指定的编码进行解码，因为网站的charset = gb2312
     response.encoding = 'gb2312'
     # 使用解码后的数据创建一个soup对象，指定HTML解析器为Python默认的html.parser
@@ -108,13 +108,20 @@ def save_images(atlas_url, image_type):
         print("开始下载图集 {}，剩余图集 {}".format(file_folder, length - count))
         time.sleep(2)
         for index, image_url in enumerate(images_url):
-            # get函数发送图片链接访问请求
-            html = requests.get(image_url, headers=headers)
-            # 保存图片至指定的文件夹，并将文件进行命名
-            image_name = folder + str(index + 1) + '.jpg'
-            # 以byte形式将图片数据写入
-            with open(image_name, 'wb') as file:
-                file.write(html.content)
+            try:
+                # get函数发送图片链接访问请求
+                html = requests.get(image_url, headers=headers, timeout=60)
+                # 保存图片至指定的文件夹，并将文件进行命名
+                image_name = folder + str(index + 1) + '.jpg'
+                # 以byte形式将图片数据写入
+                with open(image_name, 'wb') as file:
+                    file.write(html.content)
+                pass
+            except Exception as e:
+                print("下载错误..." ,e)
+                with open("error.txt", 'a') as f:
+                    f.write("{}{}".format(image_url, '\n'))
+                pass
             print('第{}张图片下载完成,开始下载第{}张图片...'.format(index + 1, index + 2))
         # 已下载图集加1
         count += 1
@@ -127,11 +134,13 @@ def save_images(atlas_url, image_type):
 
 def downTask(image_type, position):
     # 获取页面的所有图集链接
-    atlas_url = atlas(pages_url(image_type, position))
-    # 下载图集的图片
-    save_images(atlas_url, image_type)
-
-
+    try:
+        atlas_url = atlas(pages_url(image_type, position))
+        # 下载图集的图片
+        save_images(atlas_url, image_type)
+    except Exception as e:
+        print("错误..",e)
+        pass
 threadlist = []
 
 for keys in girls_images_type:
