@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 import os
 import time
 import threading
+from multiprocessing import Process
+import threadpool
 
 # 程序运行开始提示
 print("程序于 {} 开始启动，请等待...".format(time.ctime()))
@@ -74,6 +76,64 @@ def atlas(pages_url):
     return atlas_url
 
 
+def save_image_one(url):
+    print("")
+    # 调用函数，创建图集链接的soup对象
+    soup = creat_soup(url)
+    print(url)
+    image_type = "mingxing"
+    if str(url).find("xinggan") >= 0:
+        image_type = "xinggan"
+    elif str(url).find("qipao") >= 0:
+        image_type = "qipao"
+    elif str(url).find("qingchun") >= 0:
+        image_type = "qingchun"
+    elif str(url).find("xiaohua") >= 0:
+        image_type = "xiaohua"
+    elif str(url).find("chemo") >= 0:
+        image_type = "chemo"
+    # 指定文件夹名
+    file_folder = soup.find(class_='content').h5.string
+    # 将图片文件夹保存在程序文件所在目录的imgase目录下
+    folder = image_type + '_images/' + file_folder + '/'
+    if os.path.exists(folder) == False:  # 判断文件夹是否存在
+        os.makedirs(folder)  # 创建文件夹
+    # 当前图集 共多少张图片,span的内容结构是共XX页，XX为当前图片的张数
+    images_number = int(soup.find('span', class_='page-ch').string[1:-1])
+    # 当前图集的编号，如图集链接 http://www.mm131.com/qingchun/3039.html，编号为3039，用于拼接当前图集的图片地址
+    pic_number = url.replace('.', '/').split('/')[-2]
+    # 创建列表，用于保存每一张图片的链接
+    images_url = []
+    for number in range(1, images_number + 1):
+        images_url.append('http://img1.mm131.me/pic/' + pic_number + '/' + str(number) + '.jpg')
+    # 有些网站会有防盗链，原理是检查 HTTP的referer头，如果没有referer，会抓取不了数据
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+        'referer': "http://www.mm131.com/xinggan/530.html"}
+    # 开始下载提示，等待2秒后开始下载
+    print("开始下载图集 {}".format(file_folder))
+    time.sleep(2)
+    for index, image_url in enumerate(images_url):
+        try:
+            # get函数发送图片链接访问请求
+            html = requests.get(image_url, headers=headers, timeout=30)
+            # 保存图片至指定的文件夹，并将文件进行命名
+            image_name = folder + str(index + 1) + '.jpg'
+            # 以byte形式将图片数据写入
+            with open("error.txt", 'a') as f:
+                f.write("{}{}".format(image_url, '\n'))
+            with open(image_name, 'wb') as file:
+                file.write(html.content)
+            pass
+        except Exception as e:
+            print("下载错误...", e)
+            with open("error.txt", 'a') as f:
+                f.write("{}{}".format(image_url, '\n'))
+            pass
+        print('第{}张图片下载完成,开始下载第{}张图片...'.format(index + 1, index + 2))
+    # 已下载图集加1
+
+
 def save_images(atlas_url, image_type):
     '''
     该函数用于将某一图集的所有图片保存下来
@@ -81,6 +141,7 @@ def save_images(atlas_url, image_type):
     '''
     # 共有多少个图集
     length = len(atlas_url)
+    print("图集数量_image_type", length)
     # 已下载图集
     count = 1
     for url in atlas_url:
@@ -110,15 +171,17 @@ def save_images(atlas_url, image_type):
         for index, image_url in enumerate(images_url):
             try:
                 # get函数发送图片链接访问请求
-                html = requests.get(image_url, headers=headers, timeout=60)
+                html = requests.get(image_url, headers=headers, timeout=30)
                 # 保存图片至指定的文件夹，并将文件进行命名
                 image_name = folder + str(index + 1) + '.jpg'
                 # 以byte形式将图片数据写入
+                with open("error.txt", 'a') as f:
+                    f.write("{}{}".format(image_url, '\n'))
                 with open(image_name, 'wb') as file:
                     file.write(html.content)
                 pass
             except Exception as e:
-                print("下载错误..." ,e)
+                print("下载错误...", e)
                 with open("error.txt", 'a') as f:
                     f.write("{}{}".format(image_url, '\n'))
                 pass
@@ -136,17 +199,36 @@ def downTask(image_type, position):
     # 获取页面的所有图集链接
     try:
         atlas_url = atlas(pages_url(image_type, position))
+
+        length = len(atlas_url)
+        print("图集数量_", image_type, length)
         # 下载图集的图片
-        save_images(atlas_url, image_type)
+        # save_images(atlas_url, image_type)
+        task_pool = threadpool.ThreadPool(32)
+        requests = threadpool.makeRequests(save_image_one, atlas_url)
+        for req in requests:
+            task_pool.putRequest(req)
+        task_pool.wait()
     except Exception as e:
-        print("错误..",e)
+        print("错误..", e)
         pass
-threadlist = []
 
+
+processlist = []
+
+#
 for keys in girls_images_type:
-    t = threading.Thread(target=downTask, args=(keys, girls_images_type[keys],))
+    t = Process(target=downTask, args=(keys, girls_images_type[keys],))
     t.start()
-    threadlist.append(t)
+    processlist.append(t)
 
-for x in threadlist:
+for x in processlist:
     x.join()
+#
+# pages_url = pages_url('xinggan', '6')
+# # 获取页面的所有图集链接
+# atlas_url = atlas(pages_url)
+# print(atlas_url)
+
+# 下载图集的图片
+# save_images(atlas_url,'xinggan')
